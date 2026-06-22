@@ -19,5 +19,5 @@ select
     hcc_hierarchy_group,
     count(*)
 from base
-group by all
+group by person_id, payer, payment_year, model_version, hcc_hierarchy_group
 having count(*) > 1
