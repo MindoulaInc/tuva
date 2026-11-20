@@ -115,8 +115,11 @@
         {% endfor %}
 
         {% if contract_relation.get('check_physical', true) %}
+            {#- Prefixed extension (passthrough) columns are parent-project fields, not
+                Tuva public flags, so they aren't subject to flag registration. -#}
+            {% set extension_prefix = (var('passthrough', {}) or {}).get('prefix', 'x_') | lower %}
             {% for actual_column_name in actual_column_types.keys() %}
-                {% if actual_column_name.endswith('_flag') and actual_column_name not in contract_relation['flags'] %}
+                {% if actual_column_name.endswith('_flag') and actual_column_name not in contract_relation['flags'] and not actual_column_name.startswith(extension_prefix) %}
                     {% set unregistered_query %}
                         select
                               {{ dq_string_literal_sql(contract_relation['model_name']) }} as public_model_name
