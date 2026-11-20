@@ -478,32 +478,19 @@ final as (
        and matching_eligibility_member_months.data_source = source_rows.data_source
        and matching_eligibility_member_months._dq_claim_year = cast({{ date_part('year', inferred_claim_date_sql) }} as {{ dbt.type_int() }})
        and matching_eligibility_member_months._dq_claim_month = cast({{ date_part('month', inferred_claim_date_sql) }} as {{ dbt.type_int() }})
-    left join diagnosis_code_flags
-        on (
-            source_rows._dq_claim_id_key = diagnosis_code_flags._dq_claim_id_key
-            or (source_rows._dq_claim_id_key is null and diagnosis_code_flags._dq_claim_id_key is null)
-        )
-       and (
-            source_rows._dq_claim_line_number_key = diagnosis_code_flags._dq_claim_line_number_key
-            or (source_rows._dq_claim_line_number_key is null and diagnosis_code_flags._dq_claim_line_number_key is null)
-       )
-       and (
-            source_rows._dq_data_source_key = diagnosis_code_flags._dq_data_source_key
-            or (source_rows._dq_data_source_key is null and diagnosis_code_flags._dq_data_source_key is null)
-       )
-    left join procedure_code_flags
-        on (
-            source_rows._dq_claim_id_key = procedure_code_flags._dq_claim_id_key
-            or (source_rows._dq_claim_id_key is null and procedure_code_flags._dq_claim_id_key is null)
-        )
-       and (
-            source_rows._dq_claim_line_number_key = procedure_code_flags._dq_claim_line_number_key
-            or (source_rows._dq_claim_line_number_key is null and procedure_code_flags._dq_claim_line_number_key is null)
-       )
-       and (
-            source_rows._dq_data_source_key = procedure_code_flags._dq_data_source_key
-            or (source_rows._dq_data_source_key is null and procedure_code_flags._dq_data_source_key is null)
-       )
+{#- Null-safe key match spelled as plain equalities on derived values (coalesced key +
+    is-null flag) instead of `a = b or (a is null and b is null)`. An OR in the join
+    condition is not an equi-join, so Athena/Trino (and DuckDB) fall back to a
+    nested-loop join that is quadratic in claim lines. Same pattern as upstream #1473. -#}
+{%- set null_safe_join_keys = ['_dq_claim_id_key', '_dq_claim_line_number_key', '_dq_data_source_key'] %}
+{%- for flags_relation in ['diagnosis_code_flags', 'procedure_code_flags'] %}
+    left join {{ flags_relation }}
+        on
+        {%- for key in null_safe_join_keys %}
+        {{ "and " if not loop.first }}coalesce(cast(source_rows.{{ key }} as {{ string_type }}), '') = coalesce(cast({{ flags_relation }}.{{ key }} as {{ string_type }}), '')
+       and (case when source_rows.{{ key }} is null then 1 else 0 end) = (case when {{ flags_relation }}.{{ key }} is null then 1 else 0 end)
+        {%- endfor %}
+{%- endfor %}
     left join {{ ref('terminology__admit_source') }} as admit_source_lookup
         on cast(source_rows.admit_source_code as {{ string_type }}) = cast(admit_source_lookup.admit_source_code as {{ string_type }})
     left join {{ ref('terminology__admit_type') }} as admit_type_lookup
